@@ -1,0 +1,46 @@
+{
+  "name": "pebble-android-watchface",
+  "version": "1.0.0",
+  "description": "Android Clock inspired watchface for Pebble with time, date and weather",
+  "author": "Paul Em",
+  "license": "MIT",
+  "pebble": {
+    "displayName": "Android Clock",
+    "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "Temperature",
+      "WeatherCode"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_GOOGLESANSFLEX_68",
+          "file": "fonts/GoogleSansFlex-Bold.ttf",
+          "characterRegex": "[0-9]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_OUTFIT_18",
+          "file": "fonts/Outfit-SemiBold.ttf",
+          "characterRegex": "[A-Za-z0-9 °·]"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "pebble build"
+  }
+}
