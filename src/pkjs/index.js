@@ -6,7 +6,9 @@ function fetchWeather() {
       var url =
         'https://api.open-meteo.com/v1/forecast?latitude=' + lat +
         '&longitude=' + lon +
-        '&current_weather=true';
+        '&current_weather=true' +
+        '&daily=temperature_2m_max,temperature_2m_min' +
+        '&forecast_days=1&timezone=auto';
 
       var xhr = new XMLHttpRequest();
       xhr.open('GET', url, true);
@@ -14,11 +16,29 @@ function fetchWeather() {
         try {
           var data = JSON.parse(xhr.responseText);
           var temp = Math.round(data.current_weather.temperature);
-          var code = data.current_weather.weathercode;
-          Pebble.sendAppMessage({
-            Temperature: temp,
-            WeatherCode: code
-          });
+          var tmin = Math.round(data.daily.temperature_2m_min[0]);
+          var tmax = Math.round(data.daily.temperature_2m_max[0]);
+          var wcode = data.current_weather.weathercode || 0;
+
+          function sendWithPhoneBattery(phoneBatt) {
+            Pebble.sendAppMessage({
+              Temperature: temp,
+              TempMin: tmin,
+              TempMax: tmax,
+              WeatherCode: wcode,
+              PhoneBattery: phoneBatt
+            });
+          }
+
+          if (typeof navigator !== 'undefined' && navigator.getBattery) {
+            navigator.getBattery().then(function (battery) {
+              sendWithPhoneBattery(Math.round(battery.level * 100));
+            }).catch(function () {
+              sendWithPhoneBattery(-1);
+            });
+          } else {
+            sendWithPhoneBattery(-1);
+          }
         } catch (e) {
           console.log('Weather parse error: ' + e);
         }

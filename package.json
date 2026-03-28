@@ -1,7 +1,7 @@
 {
   "name": "pebble-emFace",
-  "version": "1.1.0",
-  "description": "Android Clock inspired watchface for Pebble with time, date and weather",
+  "version": "1.2.0",
+  "description": "emFace watchface with monospace time, weather range, and phone link status",
   "author": "Paul Em",
   "license": "MIT",
   "pebble": {
@@ -20,27 +20,26 @@
       "watchface": true
     },
     "messageKeys": [
+      "Ping",
+      "PhoneBattery",
       "Temperature",
+      "TempMax",
+      "TempMin",
       "WeatherCode"
     ],
     "resources": {
       "media": [
         {
           "type": "font",
-          "name": "FONT_GOOGLESANSFLEX_68",
-          "file": "fonts/GoogleSansFlex-Bold.ttf",
+          "name": "FONT_MONO_60",
+          "file": "fonts/Orbitron-Black.ttf",
           "characterRegex": "[0-9]"
-        },
-        {
-          "type": "font",
-          "name": "FONT_OUTFIT_18",
-          "file": "fonts/Outfit-SemiBold.ttf",
-          "characterRegex": "[A-Za-z0-9 °·]"
         }
       ]
     }
   },
   "scripts": {
-    "build": "pebble build"
+    "build": "pebble build",
+    "install": "pebble install --phone 192.168.1.144"
   }
 }
