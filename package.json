@@ -28,14 +28,7 @@
       "WeatherCode"
     ],
     "resources": {
-      "media": [
-        {
-          "type": "font",
-          "name": "FONT_MONO_60",
-          "file": "fonts/Orbitron-Black.ttf",
-          "characterRegex": "[0-9]"
-        }
-      ]
+      "media": []
     }
   },
   "scripts": {

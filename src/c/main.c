@@ -11,7 +11,6 @@
 static Window *s_window;
 static Layer *s_canvas;
 
-static GFont s_font_time;
 static GFont s_font_sm;
 static GFont s_font_sm_bold;
 static GFont s_font_xs;
@@ -46,9 +45,7 @@ static void update_time(void) {
 
   strftime(s_hour_buf, sizeof(s_hour_buf), clock_is_24h_style() ? "%H" : "%I", t);
   strftime(s_min_buf, sizeof(s_min_buf), "%M", t);
-  if (!clock_is_24h_style() && s_hour_buf[0] == '0' && s_hour_buf[1]) {
-    memmove(s_hour_buf, s_hour_buf + 1, strlen(s_hour_buf));
-  }
+  /* always keep leading zero for monospace consistency */
 
   strftime(s_date_buf, sizeof(s_date_buf), "%a %d", t);
   if (s_date_buf[0] >= 'a' && s_date_buf[0] <= 'z') s_date_buf[0] -= 32;
@@ -237,38 +234,123 @@ static void draw_corner_br(GContext *ctx, int rx, int by, int cw) {
 }
 
 // ---------------------------------------------------------------------------
-// Center time (two-tone stacked, same size)
+// Custom blocky digit font — seven-segment, ultra-bold geometric, rounded
 // ---------------------------------------------------------------------------
 
-static void draw_time(GContext *ctx, int cx, int cy) {
-  int tw = 140;
-  int tx = cx - tw / 2;
-  int line_h = 68;
-  int gap = -18;
-  int total = line_h * 2 + gap;
-  int y0 = cy - total / 2;
+#define DIG_W   60   /* digit cell width  */
+#define DIG_H   62   /* digit cell height */
+#define DIG_S   18   /* stroke thickness  */
+#define DIG_R   4    /* corner radius     */
+#define DIG_GAP 14   /* gap between two digits in a pair */
+#define ROW_GAP 8    /* gap between hour and minute rows */
 
-  GRect min_rect = GRect(tx, y0 + line_h + gap, tw, line_h + 4);
+#define SEG_A (1<<0)  /* top            */
+#define SEG_B (1<<1)  /* top-right      */
+#define SEG_C (1<<2)  /* bottom-right   */
+#define SEG_D (1<<3)  /* bottom         */
+#define SEG_E (1<<4)  /* bottom-left    */
+#define SEG_F (1<<5)  /* top-left       */
+#define SEG_G (1<<6)  /* middle         */
+
+static const uint8_t s_digit_segs[10] = {
+  SEG_A|SEG_B|SEG_C|SEG_D|SEG_E|SEG_F,       /* 0 */
+  SEG_B|SEG_C,                                  /* 1 (special-cased below) */
+  SEG_A|SEG_B|SEG_D|SEG_E|SEG_G,              /* 2 */
+  SEG_A|SEG_B|SEG_C|SEG_D|SEG_G,              /* 3 */
+  SEG_B|SEG_C|SEG_F|SEG_G,                     /* 4 */
+  SEG_A|SEG_C|SEG_D|SEG_F|SEG_G,              /* 5 */
+  SEG_A|SEG_C|SEG_D|SEG_E|SEG_F|SEG_G,       /* 6 */
+  SEG_A|SEG_B|SEG_C,                           /* 7 */
+  SEG_A|SEG_B|SEG_C|SEG_D|SEG_E|SEG_F|SEG_G, /* 8 */
+  SEG_A|SEG_B|SEG_C|SEG_D|SEG_F|SEG_G,       /* 9 */
+};
+
+static void draw_digit(GContext *ctx, int ox, int oy, int d,
+                        int dw, int dh, int ds, int dr) {
+  if (d < 0 || d > 9) return;
+
+  int half = dh / 2;
+  int vlen = half + ds / 2;   /* vertical seg length (overlaps horizontals) */
+
+  /* "1" gets a half-width flag at top + right vertical for visual weight */
+  if (d == 1) {
+    int bar_x = ox + dw - ds;
+    graphics_fill_rect(ctx,
+        GRect(ox + dw / 3, oy, dw - dw / 3, ds),
+        dr, GCornersAll);
+    graphics_fill_rect(ctx, GRect(bar_x, oy, ds, dh),
+        dr, GCornersAll);
+    return;
+  }
+
+  uint8_t segs = s_digit_segs[d];
+
+  if (segs & SEG_A)
+    graphics_fill_rect(ctx, GRect(ox, oy, dw, ds), dr, GCornersAll);
+  if (segs & SEG_D)
+    graphics_fill_rect(ctx, GRect(ox, oy + dh - ds, dw, ds), dr, GCornersAll);
+  if (segs & SEG_G)
+    graphics_fill_rect(ctx, GRect(ox, oy + half - ds / 2, dw, ds), dr, GCornersAll);
+  if (segs & SEG_F)
+    graphics_fill_rect(ctx, GRect(ox, oy, ds, vlen), dr, GCornersAll);
+  if (segs & SEG_B)
+    graphics_fill_rect(ctx, GRect(ox + dw - ds, oy, ds, vlen), dr, GCornersAll);
+  if (segs & SEG_E)
+    graphics_fill_rect(ctx, GRect(ox, oy + half - ds / 2, ds, vlen), dr, GCornersAll);
+  if (segs & SEG_C)
+    graphics_fill_rect(ctx, GRect(ox + dw - ds, oy + half - ds / 2, ds, vlen),
+        dr, GCornersAll);
+}
+
+// ---------------------------------------------------------------------------
+// Center time (two-tone stacked)
+// ---------------------------------------------------------------------------
+
+static void draw_time(GContext *ctx, int cx, int cy, int top_y, int bot_y) {
+  /* Scale all dimensions proportionally to fit available vertical space */
+  int avail     = bot_y - top_y;
+  int max_total = DIG_H * 2 + ROW_GAP;
+  int sn = avail < max_total ? avail : max_total;  /* scale numerator   */
+  int sd = max_total;                               /* scale denominator */
+
+  int dh   = DIG_H   * sn / sd;
+  int dw   = DIG_W   * sn / sd;
+  int ds   = DIG_S   * sn / sd;
+  int dgap = DIG_GAP * sn / sd;
+  int rgap = ROW_GAP * sn / sd;
+  int dr   = DIG_R   * sn / sd;
+  if (ds < 6) ds = 6;
+  if (dr < 2) dr = 2;
+  if (rgap < 2) rgap = 2;
+
+  int pair_w  = dw * 2 + dgap;
+  int total_h = dh * 2 + rgap;
+  int x0      = cx - pair_w / 2;
+  int y_hour  = cy - total_h / 2;
+  int y_min   = y_hour + dh + rgap;
+
+  int h0 = s_hour_buf[0] - '0';
+  int h1 = s_hour_buf[1] - '0';
+  int m0 = s_min_buf[0] - '0';
+  int m1 = s_min_buf[1] - '0';
 
 #ifdef PBL_BW
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, s_min_buf, s_font_time, min_rect,
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-  dither_rect(ctx, min_rect);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  draw_digit(ctx, x0, y_min, m0, dw, dh, ds, dr);
+  draw_digit(ctx, x0 + dw + dgap, y_min, m1, dw, dh, ds, dr);
+  dither_rect(ctx, GRect(x0, y_min, pair_w, dh));
 
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, s_hour_buf, s_font_time,
-      GRect(tx, y0, tw, line_h + 4),
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  draw_digit(ctx, x0, y_hour, h0, dw, dh, ds, dr);
+  draw_digit(ctx, x0 + dw + dgap, y_hour, h1, dw, dh, ds, dr);
 #else
-  graphics_context_set_text_color(ctx, GColorLightGray);
-  graphics_draw_text(ctx, s_hour_buf, s_font_time,
-      GRect(tx, y0, tw, line_h + 4),
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  graphics_context_set_fill_color(ctx, GColorLightGray);
+  draw_digit(ctx, x0, y_hour, h0, dw, dh, ds, dr);
+  draw_digit(ctx, x0 + dw + dgap, y_hour, h1, dw, dh, ds, dr);
 
-  graphics_context_set_text_color(ctx, GColorDarkGray);
-  graphics_draw_text(ctx, s_min_buf, s_font_time, min_rect,
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  graphics_context_set_fill_color(ctx, GColorDarkGray);
+  draw_digit(ctx, x0, y_min, m0, dw, dh, ds, dr);
+  draw_digit(ctx, x0 + dw + dgap, y_min, m1, dw, dh, ds, dr);
 #endif
 }
 
@@ -295,7 +377,9 @@ static void canvas_draw(Layer *layer, GContext *ctx) {
   draw_corner_bl(ctx, lx, by, cw);
   draw_corner_br(ctx, rx, by, cw);
 
-  draw_time(ctx, w / 2, h / 2);
+  int top_limit = my + 28;   /* below slider (5) + text (22) + pad (1) */
+  int bot_limit = by;        /* right where bottom info starts         */
+  draw_time(ctx, w / 2, h / 2, top_limit, bot_limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +469,6 @@ static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
 
-  s_font_time     = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_MONO_60));
   s_font_sm       = fonts_get_system_font(FONT_KEY_GOTHIC_18);
   s_font_sm_bold  = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   s_font_xs       = fonts_get_system_font(FONT_KEY_GOTHIC_14);
@@ -409,7 +492,6 @@ static void window_load(Window *window) {
 }
 
 static void window_unload(Window *window) {
-  fonts_unload_custom_font(s_font_time);
   layer_destroy(s_canvas);
   s_canvas = NULL;
 }
